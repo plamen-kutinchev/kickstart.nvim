@@ -1,3 +1,5 @@
+local util = require "lspconfig/util"
+
 return {
   {
     "williamboman/mason.nvim",
@@ -32,6 +34,24 @@ return {
       lspconfig.lua_ls.setup({
         capabilities = capabilities
       })
+
+    lspconfig.gopls.setup({
+      capabilities = capabilities,
+      settings = {
+        gopls = {
+          analyses = {
+            nilness = true,
+            unusedparams = true,
+            unusedvariable = true,
+            unusedwrite = true,
+            useany = true,
+          },
+          gofumpt = true,
+          staticcheck = true,
+          usePlaceholders = true,
+        },
+      },
+    })
 
       vim.keymap.set("n", "K", vim.lsp.buf.hover, {})
       vim.keymap.set("n", "<leader>gd", vim.lsp.buf.definition, {})
