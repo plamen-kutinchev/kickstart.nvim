@@ -23,7 +23,7 @@ return {
 
     -- Add your own debuggers here
     'leoluz/nvim-dap-go',
-    'theHamsta/nvim-dap-virtual-text'
+    'theHamsta/nvim-dap-virtual-text',
   },
   config = function()
     local dap = require 'dap'
@@ -89,7 +89,7 @@ return {
     require('dap-go').setup()
 
     -- Setup DAP virtual text
-    require("nvim-dap-virtual-text").setup({})
+    require('nvim-dap-virtual-text').setup {}
     vim.g.dap_virtual_text = true
   end,
 }
