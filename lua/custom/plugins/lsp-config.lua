@@ -19,29 +19,43 @@ return {
     config = function()
       local capabilities = require('cmp_nvim_lsp').default_capabilities()
 
-      local lspconfig = require 'lspconfig'
-      lspconfig.ts_ls.setup {
+      -- TypeScript/JavaScript
+      vim.lsp.config('ts_ls', {
         capabilities = capabilities,
-      }
-      lspconfig.solargraph.setup {
+      })
+      
+      -- Ruby
+      vim.lsp.config('solargraph', {
         capabilities = capabilities,
-      }
-      lspconfig.html.setup {
+      })
+      
+      -- HTML
+      vim.lsp.config('html', {
         capabilities = capabilities,
-      }
-      lspconfig.lua_ls.setup {
+      })
+      
+      -- Lua
+      vim.lsp.config('lua_ls', {
         capabilities = capabilities,
-      }
-      lspconfig.pyright.setup {
+      })
+      
+      -- Python
+      vim.lsp.config('pyright', {
         capabilities = capabilities,
-      }
-      lspconfig.yamlls.setup {
+      })
+      
+      -- YAML
+      vim.lsp.config('yamlls', {
         capabilities = capabilities,
-      }
-      lspconfig.zls.setup {
+      })
+      
+      -- Zig
+      vim.lsp.config('zls', {
         capabilities = capabilities,
-      }
-      lspconfig.gopls.setup {
+      })
+      
+      -- Go
+      vim.lsp.config('gopls', {
         capabilities = capabilities,
         settings = {
           gopls = {
@@ -57,10 +71,12 @@ return {
             usePlaceholders = true,
           },
         },
-      }
-      lspconfig.jsonls.setup {
+      })
+      
+      -- JSON
+      vim.lsp.config('jsonls', {
         capabilities = capabilities,
-      }
+      })
 
       vim.keymap.set('n', 'K', vim.lsp.buf.hover, {})
       vim.keymap.set('n', '<leader>gd', vim.lsp.buf.definition, {})
