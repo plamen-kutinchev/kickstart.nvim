@@ -755,34 +755,102 @@ require('lazy').setup({
       --  Check out: https://github.com/echasnovski/mini.nvim
     end,
   },
-  { -- Highlight, edit, and navigate code
+  { -- Highlight, edit, and navigate code (nvim-treesitter `main` branch rewrite).
+    -- Requires Neovim 0.12+ and a working `tree-sitter-cli` (>= 0.26.1) plus
+    -- `tar`, `curl`, and a C compiler in PATH. The `main` branch is a full
+    -- rewrite with a brand-new API (no more `nvim-treesitter.configs`).
     'nvim-treesitter/nvim-treesitter',
+    branch = 'main',
+    lazy = false, -- the rewrite explicitly does not support lazy loading
     build = ':TSUpdate',
-    opts = {
-      ensure_installed = { 'bash', 'c', 'html', 'lua', 'markdown', 'vim', 'vimdoc', 'json' },
-      -- Autoinstall languages that are not installed
-      auto_install = true,
-      highlight = {
-        enable = true,
-        -- Some languages depend on vim's regex highlighting system (such as Ruby) for indent rules.
-        --  If you are experiencing weird indenting issues, add the language to
-        --  the list of additional_vim_regex_highlighting and disabled languages for indent.
-        additional_vim_regex_highlighting = { 'ruby' },
-      },
-      indent = { enable = true, disable = { 'ruby' } },
-    },
-    config = function(_, opts)
-      -- [[ Configure Treesitter ]] See `:help nvim-treesitter`
+    config = function()
+      -- Defensive load: if lazy.nvim hasn't yet switched the plugin to the
+      -- `main` branch (e.g. lazy-lock.json still pins `master`), `ts.install`
+      -- and `ts.setup` will be nil. Bail out gracefully instead of crashing
+      -- startup -- the user just needs to run `:Lazy update nvim-treesitter`.
+      local ok_req, ts = pcall(require, 'nvim-treesitter')
+      if not ok_req or type(ts) ~= 'table' or type(ts.install) ~= 'function' then
+        vim.schedule(function()
+          vim.notify(
+            'nvim-treesitter: loaded plugin is not the `main` branch.\n'
+              .. 'Run `:Lazy update nvim-treesitter` (and restart) to switch branches.',
+            vim.log.levels.WARN
+          )
+        end)
+        return
+      end
 
-      ---@diagnostic disable-next-line: missing-fields
-      require('nvim-treesitter.configs').setup(opts)
+      ts.setup {
+        install_dir = vim.fn.stdpath 'data' .. '/site',
+      }
 
-      -- There are additional nvim-treesitter modules that you can use to interact
-      -- with nvim-treesitter. You should go explore a few and see what interests you:
-      --
-      --    - Incremental selection: Included, see `:help nvim-treesitter-incremental-selection-mod`
-      --    - Show your current context: https://github.com/nvim-treesitter/nvim-treesitter-context
-      --    - Treesitter + textobjects: https://github.com/nvim-treesitter/nvim-treesitter-textobjects
+      -- Parsers we want available everywhere. New API: install is async.
+      local ensure_installed = {
+        'bash',
+        'c',
+        'html',
+        'lua',
+        'markdown',
+        'markdown_inline',
+        'vim',
+        'vimdoc',
+        'json',
+        'query',
+        'diff',
+        'regex',
+      }
+      ts.install(ensure_installed)
+
+      -- Filetypes for which we never want Treesitter highlighting.
+      -- The Avante AI sidebar lives in long-running markdown buffers and
+      -- was the source of the `attempt to call method 'range' (a nil value)`
+      -- crash on Neovim 0.12.x; keeping it on regex syntax avoids it.
+      local skip_ft = {
+        Avante = true,
+        AvanteInput = true,
+        AvanteSelectedFiles = true,
+        AvantePromptInput = true,
+        AvanteTodos = true,
+      }
+
+      local MAX_FILESIZE = 200 * 1024 -- 200 KB
+
+      vim.api.nvim_create_autocmd('FileType', {
+        group = vim.api.nvim_create_augroup('user.treesitter', { clear = true }),
+        callback = function(args)
+          local bufnr = args.buf
+          local ft = vim.bo[bufnr].filetype
+
+          if skip_ft[ft] then
+            return
+          end
+
+          -- Skip very large files for performance and crash safety.
+          local ok_stat, stats = pcall(vim.loop.fs_stat, vim.api.nvim_buf_get_name(bufnr))
+          if ok_stat and stats and stats.size > MAX_FILESIZE then
+            return
+          end
+
+          -- Try to start Treesitter; silently fall back to regex syntax
+          -- if no parser is installed for this filetype yet.
+          local ok = pcall(vim.treesitter.start, bufnr)
+          if not ok then
+            return
+          end
+
+          -- Ruby keeps Vim's regex highlighting on top of Treesitter for
+          -- correct indentation, mirroring the previous configuration.
+          if ft == 'ruby' then
+            vim.bo[bufnr].syntax = 'on'
+          end
+
+          -- Treesitter-based indent (still experimental upstream). Enabled
+          -- for everything except ruby, mirroring the previous behaviour.
+          if ft ~= 'ruby' then
+            vim.bo[bufnr].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+          end
+        end,
+      })
     end,
   },
 
