@@ -676,6 +676,16 @@ require('lazy').setup({
           --  This will expand snippets if the LSP sent a snippet.
           ['<C-y>'] = cmp.mapping.confirm { select = true },
 
+          -- Same as <C-y>, but only while the menu is open, so <Tab> keeps
+          -- indenting everywhere else.
+          ['<Tab>'] = cmp.mapping(function(fallback)
+            if cmp.visible() then
+              cmp.confirm { select = true }
+            else
+              fallback()
+            end
+          end, { 'i', 's' }),
+
           -- Manually trigger a completion from nvim-cmp.
           --  Generally you don't need this, because nvim-cmp will display
           --  completions whenever it has completion options available.
@@ -703,10 +713,10 @@ require('lazy').setup({
           -- For more advanced Luasnip keymaps (e.g. selecting choice nodes, expansion) see:
           --    https://github.com/L3MON4D3/LuaSnip?tab=readme-ov-file#keymaps
         },
+        -- Source names must match a registered nvim-cmp source, not an LSP
+        -- server name -- everything from a language server arrives via
+        -- `nvim_lsp`.
         sources = {
-          { name = 'pyright' },
-          { name = 'gopls' },
-          { name = 'copilot' },
           { name = 'nvim_lsp' },
           { name = 'luasnip' },
           { name = 'path' },
@@ -785,9 +795,15 @@ require('lazy').setup({
       }
 
       -- Parsers we want available everywhere. New API: install is async.
+      -- Anything not listed here is installed on demand by the FileType
+      -- autocommand below, so this list only needs the common cases.
       local ensure_installed = {
         'bash',
         'c',
+        'go',
+        'gomod',
+        'gosum',
+        'gowork',
         'html',
         'lua',
         'markdown',
@@ -798,6 +814,7 @@ require('lazy').setup({
         'query',
         'diff',
         'regex',
+        'yaml',
       }
       ts.install(ensure_installed)
 
@@ -815,39 +832,96 @@ require('lazy').setup({
 
       local MAX_FILESIZE = 200 * 1024 -- 200 KB
 
+      -- A parser alone is not enough: `vim.treesitter.start` happily attaches
+      -- a highlighter with no highlight query, which turns Vim's regex syntax
+      -- off and leaves the buffer completely uncoloured. Only start when the
+      -- highlight query is actually on 'runtimepath'.
+      local function has_highlights(lang)
+        local ok, query = pcall(vim.treesitter.query.get, lang, 'highlights')
+        return ok and query ~= nil
+      end
+
+      local function start(bufnr, lang)
+        if not vim.api.nvim_buf_is_valid(bufnr) then
+          return
+        end
+        if not pcall(vim.treesitter.start, bufnr, lang) then
+          vim.bo[bufnr].syntax = 'on'
+          return
+        end
+
+        -- Ruby keeps Vim's regex highlighting on top of Treesitter for
+        -- correct indentation, mirroring the previous configuration.
+        if vim.bo[bufnr].filetype == 'ruby' then
+          vim.bo[bufnr].syntax = 'on'
+        else
+          vim.bo[bufnr].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+        end
+      end
+
+      -- The set of installable languages never changes during a session.
+      local available
+      local function can_install(lang)
+        if not available then
+          available = {}
+          for _, l in ipairs(ts.get_available()) do
+            available[l] = true
+          end
+        end
+        return available[lang] == true
+      end
+
+      local installing = {}
+
+      local function install_then_start(lang)
+        if installing[lang] or not can_install(lang) then
+          return
+        end
+        installing[lang] = true
+
+        ts.install(lang):await(function(err)
+          installing[lang] = nil
+          if err then
+            return
+          end
+          vim.schedule(function()
+            for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+              local ft = vim.api.nvim_buf_is_loaded(bufnr) and vim.bo[bufnr].filetype or nil
+              if ft and not skip_ft[ft] and vim.treesitter.language.get_lang(ft) == lang then
+                start(bufnr, lang)
+              end
+            end
+          end)
+        end)
+      end
+
       vim.api.nvim_create_autocmd('FileType', {
         group = vim.api.nvim_create_augroup('user.treesitter', { clear = true }),
         callback = function(args)
           local bufnr = args.buf
           local ft = vim.bo[bufnr].filetype
 
-          if skip_ft[ft] then
+          if ft == '' or skip_ft[ft] then
             return
           end
 
           -- Skip very large files for performance and crash safety.
-          local ok_stat, stats = pcall(vim.loop.fs_stat, vim.api.nvim_buf_get_name(bufnr))
+          local ok_stat, stats = pcall(vim.uv.fs_stat, vim.api.nvim_buf_get_name(bufnr))
           if ok_stat and stats and stats.size > MAX_FILESIZE then
             return
           end
 
-          -- Try to start Treesitter; silently fall back to regex syntax
-          -- if no parser is installed for this filetype yet.
-          local ok = pcall(vim.treesitter.start, bufnr)
-          if not ok then
+          local lang = vim.treesitter.language.get_lang(ft)
+          if lang and has_highlights(lang) then
+            start(bufnr, lang)
             return
           end
 
-          -- Ruby keeps Vim's regex highlighting on top of Treesitter for
-          -- correct indentation, mirroring the previous configuration.
-          if ft == 'ruby' then
-            vim.bo[bufnr].syntax = 'on'
-          end
-
-          -- Treesitter-based indent (still experimental upstream). Enabled
-          -- for everything except ruby, mirroring the previous behaviour.
-          if ft ~= 'ruby' then
-            vim.bo[bufnr].indentexpr = "v:lua.require'nvim-treesitter'.indentexpr()"
+          -- Keep regex highlighting so the buffer is never left uncoloured,
+          -- and fetch the missing parser in the background.
+          vim.bo[bufnr].syntax = 'on'
+          if lang then
+            install_then_start(lang)
           end
         end,
       })
