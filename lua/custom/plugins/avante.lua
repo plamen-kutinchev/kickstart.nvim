@@ -9,7 +9,7 @@ return {
       langdock_claude = {
         __inherited_from = 'claude',
         endpoint = 'https://api.langdock.com/anthropic/eu',
-        model = 'claude-opus-4-7-default',
+        model = 'claude-opus-5',
         api_key_name = 'LANGDOCK_API_KEY',
         -- Strip params Opus 4.7 rejects
         parse_curl_args = function(opts, code_opts)
@@ -23,5 +23,11 @@ return {
         end,
       },
     },
+  },
+  dependencies = {
+    'nvim-lua/plenary.nvim',
+    'MunifTanjim/nui.nvim',
+    -- Required by recent avante.nvim for :Avante command parsing
+    { 'ColinKennedy/mega.cmdparse', dependencies = { 'ColinKennedy/mega.logging' } },
   },
 }
