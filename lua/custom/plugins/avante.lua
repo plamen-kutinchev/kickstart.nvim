@@ -9,9 +9,9 @@ return {
       langdock_claude = {
         __inherited_from = 'claude',
         endpoint = 'https://api.langdock.com/anthropic/eu',
-        model = 'claude-opus-5',
+        model = 'claude-opus-5-5',
         api_key_name = 'LANGDOCK_API_KEY',
-        -- Strip params Opus 4.7 rejects
+        -- Strip sampling params Opus 5.5 rejects
         parse_curl_args = function(opts, code_opts)
           local claude = require 'avante.providers.claude'
           local args = claude.parse_curl_args(opts, code_opts)
